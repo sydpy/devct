@@ -10,9 +10,10 @@ COMPOSE_BACKEND = Path(os.getenv("DEVCT_COMPOSE", "/usr/bin/podman-compose"))
 def build_parser() -> argparse.ArgumentParser:
     fmt_class = argparse.ArgumentDefaultsHelpFormatter
     parser = argparse.ArgumentParser(formatter_class=fmt_class)
-    subparser = parser.add_subparsers(dest="command", required=True)
+    subparser = parser.add_subparsers(required=True)
 
     init_parser = subparser.add_parser("init", aliases=["i"], formatter_class=fmt_class)
+    init_parser.set_defaults(command="init")
     init_parser.add_argument(
         "--template-dir",
         "-d",
@@ -33,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     run_parser = subparser.add_parser("run", aliases=["r"], formatter_class=fmt_class)
+    run_parser.set_defaults(command="run")
     run_parser.add_argument(
         "--project",
         "-p",
