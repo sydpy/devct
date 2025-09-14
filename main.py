@@ -1,4 +1,4 @@
-from devct.cli import main
+from devct import main
 
 
 if __name__ == "__main__":
