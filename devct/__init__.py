@@ -41,6 +41,16 @@ def cmd_init(args: argparse.Namespace) -> None:
         logger.info("Created %s", compose_file)
 
 
+def cmd_build(args: argparse.Namespace) -> None:
+    compose_file = _find_compose_file(args.project)
+    extra = [a for pair in args.podman_build_args for a in pair] if args.podman_build_args else []
+    cmd = [COMPOSE, "-f", str(compose_file), "build", *extra, *args.services]
+    if args.dry_run:
+        logger.info(subprocess.list2cmdline(cmd))
+    else:
+        subprocess.check_call(cmd, cwd=args.project)
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     compose_file = _find_compose_file(args.project)
     run_flags = ["--rm"] if args.rm else []
@@ -78,6 +88,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Create .devct/ with a basic compose.yml",
     )
     init_parser.set_defaults(func=cmd_init)
+
+    build_parser = subparsers.add_parser(
+        "build",
+        aliases=["b"],
+        formatter_class=fmt_class,
+        help="Build service containers",
+    )
+    build_parser.set_defaults(func=cmd_build)
+    build_parser.add_argument(
+        "--podman-build-args",
+        metavar="ARG",
+        nargs=1,
+        action="append",
+        default=[],
+        help="Extra argument forwarded to podman-compose build (repeatable)",
+    )
+    build_parser.add_argument(
+        "services",
+        nargs="*",
+        help="Services to build, if not provided, all services are built",
+    )
 
     run_parser = subparsers.add_parser(
         "run",
