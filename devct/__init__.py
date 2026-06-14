@@ -2,6 +2,7 @@
 import argparse
 import logging
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -29,16 +30,38 @@ def _find_compose_file(project_path: Path) -> Path:
     raise FileNotFoundError(f'No compose file found under "{project_devct_dir}"')
 
 
+def _templates_dir() -> Path:
+    config_home = os.getenv("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return Path(config_home) / "devct"
+
+
 def cmd_init(args: argparse.Namespace) -> None:
     devct_dir = args.project / DEVCT_DIR
-    compose_file = devct_dir / "compose.yml"
-    if args.dry_run:
-        logger.info(devct_dir)
-        logger.info(compose_file)
+    if devct_dir.exists():
+        if not args.force:
+            raise FileExistsError(f'"{devct_dir}" already exists, use --force to overwrite')
+        if args.dry_run:
+            logger.info("rm -r %s", devct_dir)
+        else:
+            shutil.rmtree(devct_dir)
+    if args.template:
+        template_dir = _templates_dir() / args.template
+        if not template_dir.is_dir():
+            raise FileNotFoundError(f'No template named "{args.template}" under "{_templates_dir()}"')
+        if args.dry_run:
+            logger.info("%s -> %s", template_dir, devct_dir)
+        else:
+            shutil.copytree(template_dir, devct_dir, dirs_exist_ok=True)
+            logger.info("Created %s from template %s", devct_dir, args.template)
     else:
-        devct_dir.mkdir(exist_ok=True)
-        compose_file.write_text(BASIC_COMPOSE)
-        logger.info("Created %s", compose_file)
+        compose_file = devct_dir / "compose.yml"
+        if args.dry_run:
+            logger.info(devct_dir)
+            logger.info(compose_file)
+        else:
+            devct_dir.mkdir(exist_ok=True)
+            compose_file.write_text(BASIC_COMPOSE)
+            logger.info("Created %s", compose_file)
 
 
 def cmd_build(args: argparse.Namespace) -> None:
@@ -88,6 +111,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Create .devct/ with a basic compose.yml",
     )
     init_parser.set_defaults(func=cmd_init)
+    init_parser.add_argument(
+        "--template",
+        "-t",
+        metavar="NAME",
+        help=f"Template directory under {_templates_dir()} to copy",
+    )
+    init_parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="Overwrite an existing .devct/ directory",
+    )
 
     build_parser = subparsers.add_parser(
         "build",
