@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# PYTHON_ARGCOMPLETE_OK
 import argparse
 import asyncio
 import inspect
@@ -8,6 +9,15 @@ import shutil
 from pathlib import Path
 
 from podman_compose import podman_compose
+
+try:
+    import yaml
+    from argcomplete import autocomplete
+
+    HAS_ARGCOMPLETE = True
+except ModuleNotFoundError:
+    HAS_ARGCOMPLETE = False
+
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +98,14 @@ async def cmd_run(args: argparse.Namespace) -> None:
     await _run_compose(compose_file, ["run", *run_flags, *extra, args.service, *args.args], args.project, args.dry_run)
 
 
+def _service_completer(parsed_args: argparse.Namespace, **kwargs: object) -> list[str]:
+    try:
+        data = yaml.safe_load(_find_compose_file(parsed_args.project).read_text())
+    except (FileNotFoundError, yaml.YAMLError):
+        return []
+    return list((data or {}).get("services", {}))
+
+
 def build_parser() -> argparse.ArgumentParser:
     fmt_class = argparse.ArgumentDefaultsHelpFormatter
     parser = argparse.ArgumentParser(formatter_class=fmt_class)
@@ -142,11 +160,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Extra argument forwarded to podman-compose build (repeatable)",
     )
-    build_parser.add_argument(
+    action = build_parser.add_argument(
         "services",
         nargs="*",
         help="Services to build, if not provided, all services are built",
     )
+    if HAS_ARGCOMPLETE:
+        action.completer = _service_completer
 
     run_parser = subparsers.add_parser(
         "run",
@@ -169,12 +189,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Extra argument forwarded to podman-compose run (repeatable)",
     )
-    run_parser.add_argument("service", help="Service to run")
+    action = run_parser.add_argument("service", help="Service to run")
+    if HAS_ARGCOMPLETE:
+        action.completer = _service_completer
     run_parser.add_argument(
         "args",
         nargs="*",
         help="Command to run inside the container",
     )
+    if HAS_ARGCOMPLETE:
+        autocomplete(parser)
 
     return parser
 
