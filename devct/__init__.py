@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 # PYTHON_ARGCOMPLETE_OK
 import argparse
-import asyncio
-import inspect
 import logging
 import os
 import shutil
+import subprocess
 from pathlib import Path
-
-from podman_compose import podman_compose
 
 try:
     import yaml
@@ -18,8 +15,9 @@ try:
 except ModuleNotFoundError:
     HAS_ARGCOMPLETE = False
 
-
 logger = logging.getLogger(__name__)
+
+COMPOSE = os.getenv("DEVCT_COMPOSE", "podman-compose")
 
 DEVCT_DIR = ".devct"
 COMPOSE_FILE_NAMES = ["compose.yml", "compose.yaml"]
@@ -76,26 +74,25 @@ def cmd_init(args: argparse.Namespace) -> None:
             logger.info("Created %s", compose_file)
 
 
-async def _run_compose(compose_file: Path, command_args: list[str], project: Path, dry_run: bool) -> None:
-    argv = ["-f", str(compose_file)]
-    if dry_run:
-        argv.append("--dry-run")
-    argv += command_args
-    os.chdir(project)
-    await podman_compose.run(argv)
-
-
-async def cmd_build(args: argparse.Namespace) -> None:
+def cmd_build(args: argparse.Namespace) -> None:
     compose_file = _find_compose_file(args.project)
     extra = [a for pair in args.podman_build_args for a in pair] if args.podman_build_args else []
-    await _run_compose(compose_file, ["build", *extra, *args.services], args.project, args.dry_run)
+    cmd = [COMPOSE, "-f", str(compose_file), "build", *extra, *args.services]
+    if args.dry_run:
+        logger.info(subprocess.list2cmdline(cmd))
+    else:
+        subprocess.check_call(cmd, cwd=args.project)
 
 
-async def cmd_run(args: argparse.Namespace) -> None:
+def cmd_run(args: argparse.Namespace) -> None:
     compose_file = _find_compose_file(args.project)
     run_flags = ["--rm"] if args.rm else []
     extra = [a for pair in args.podman_run_args for a in pair] if args.podman_run_args else []
-    await _run_compose(compose_file, ["run", *run_flags, *extra, args.service, *args.args], args.project, args.dry_run)
+    cmd = [COMPOSE, "-f", str(compose_file), "run", *run_flags, *extra, args.service, *args.args]
+    if args.dry_run:
+        logger.info(subprocess.list2cmdline(cmd))
+    else:
+        subprocess.check_call(cmd, cwd=args.project)
 
 
 def _service_completer(parsed_args: argparse.Namespace, **kwargs: object) -> list[str]:
@@ -207,9 +204,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = build_parser()
     args = parser.parse_args()
-    result = args.func(args)
-    if inspect.iscoroutine(result):
-        asyncio.run(result)
+    args.func(args)
 
 
 if __name__ == "__main__":
