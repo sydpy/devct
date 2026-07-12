@@ -1,0 +1,33 @@
+services:
+  dev:
+    image: docker.io/nixos/nix
+    environment:
+      - TERM
+      - NIXPKGS_ALLOW_UNFREE=1
+    volumes:
+      - nix:/nix
+      - ${PWD}:/workdir
+      - ${PWD}/.git:/workdir/.git:ro
+      - ${PWD}/.devct/nix.conf:/root/.config/nix/nix.conf:ro
+    working_dir: /workdir
+    entrypoint: nix-shell .devct/dev-shell.nix --command
+    command: bash
+
+  editor:
+    extends:
+      service: dev
+    volumes:
+      - ${HOME}/.config/helix:/root/.config/helix:ro
+    command: hx
+
+  claude:
+    extends:
+      service: dev
+    volumes:
+      - ${HOME}/.claude:/root/.claude
+      - ${HOME}/.claude.json:/root/.claude.json
+    command: claude
+
+volumes:
+  nix:
+    external: true
