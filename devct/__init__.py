@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # PYTHON_ARGCOMPLETE_OK
 import argparse
+import json
 import logging
 import os
 import shutil
@@ -95,12 +96,45 @@ def cmd_run(args: argparse.Namespace) -> None:
         subprocess.check_call(cmd, cwd=args.project)
 
 
+def cmd_list(args: argparse.Namespace) -> None:
+    compose_file = _find_compose_file(args.project)
+    cmd = [COMPOSE, "-f", str(compose_file), "ps"]
+    if args.dry_run:
+        logger.info(subprocess.list2cmdline(cmd))
+    else:
+        subprocess.check_call(cmd, cwd=args.project)
+
+
+def cmd_exec(args: argparse.Namespace) -> None:
+    # podman-compose exec only accepts service names, so target the container directly
+    cmd = ["podman", "exec", "--interactive", "--tty", args.container, *args.args]
+    if args.dry_run:
+        logger.info(subprocess.list2cmdline(cmd))
+    else:
+        subprocess.check_call(cmd)
+
+
 def _service_completer(parsed_args: argparse.Namespace, **kwargs: object) -> list[str]:
     try:
         data = yaml.safe_load(_find_compose_file(parsed_args.project).read_text())
     except (FileNotFoundError, yaml.YAMLError):
         return []
     return list((data or {}).get("services", {}))
+
+
+def _container_completer(parsed_args: argparse.Namespace, **kwargs: object) -> list[str]:
+    try:
+        compose_file = _find_compose_file(parsed_args.project)
+        proc = subprocess.run(
+            [COMPOSE, "-f", str(compose_file), "ps", "--format", "json"],
+            capture_output=True,
+            text=True,
+            cwd=parsed_args.project,
+        )
+        containers = json.loads(proc.stdout)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+    return [name for c in containers if c.get("State") == "running" for name in c.get("Names", [])]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -194,6 +228,30 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="*",
         help="Command to run inside the container",
     )
+    list_parser = subparsers.add_parser(
+        "list",
+        aliases=["l", "ls"],
+        formatter_class=fmt_class,
+        help="List running service containers",
+    )
+    list_parser.set_defaults(func=cmd_list)
+
+    exec_parser = subparsers.add_parser(
+        "exec",
+        aliases=["e"],
+        formatter_class=fmt_class,
+        help="Run a command in a running container",
+    )
+    exec_parser.set_defaults(func=cmd_exec)
+    action = exec_parser.add_argument("container", help="Running container to exec into")
+    if HAS_ARGCOMPLETE:
+        action.completer = _container_completer
+    exec_parser.add_argument(
+        "args",
+        nargs="*",
+        help="Command to run inside the container",
+    )
+
     if HAS_ARGCOMPLETE:
         autocomplete(parser)
 
