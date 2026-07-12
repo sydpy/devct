@@ -1,20 +1,15 @@
 #!/usr/bin/env python3
 # PYTHON_ARGCOMPLETE_OK
 import argparse
-import json
 import logging
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
-try:
-    import yaml
-    from argcomplete import autocomplete
-
-    HAS_ARGCOMPLETE = True
-except ModuleNotFoundError:
-    HAS_ARGCOMPLETE = False
+import yaml
+from argcomplete import autocomplete
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +72,7 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 def cmd_build(args: argparse.Namespace) -> None:
     compose_file = _find_compose_file(args.project)
-    extra = [a for pair in args.podman_build_args for a in pair] if args.podman_build_args else []
-    cmd = [COMPOSE, "-f", str(compose_file), "build", *extra, *args.services]
+    cmd = [COMPOSE, "-f", str(compose_file), "build", *args.podman_build_args, *args.services]
     if args.dry_run:
         logger.info(subprocess.list2cmdline(cmd))
     else:
@@ -88,8 +82,7 @@ def cmd_build(args: argparse.Namespace) -> None:
 def cmd_run(args: argparse.Namespace) -> None:
     compose_file = _find_compose_file(args.project)
     run_flags = ["--rm"] if args.rm else []
-    extra = [a for pair in args.podman_run_args for a in pair] if args.podman_run_args else []
-    cmd = [COMPOSE, "-f", str(compose_file), "run", *run_flags, *extra, args.service, *args.args]
+    cmd = [COMPOSE, "-f", str(compose_file), "run", *run_flags, *args.podman_run_args, args.service, *args.args]
     if args.dry_run:
         logger.info(subprocess.list2cmdline(cmd))
     else:
@@ -105,36 +98,12 @@ def cmd_list(args: argparse.Namespace) -> None:
         subprocess.check_call(cmd, cwd=args.project)
 
 
-def cmd_exec(args: argparse.Namespace) -> None:
-    # podman-compose exec only accepts service names, so target the container directly
-    cmd = ["podman", "exec", "--interactive", "--tty", args.container, *args.args]
-    if args.dry_run:
-        logger.info(subprocess.list2cmdline(cmd))
-    else:
-        subprocess.check_call(cmd)
-
-
 def _service_completer(parsed_args: argparse.Namespace, **kwargs: object) -> list[str]:
     try:
         data = yaml.safe_load(_find_compose_file(parsed_args.project).read_text())
     except (FileNotFoundError, yaml.YAMLError):
         return []
     return list((data or {}).get("services", {}))
-
-
-def _container_completer(parsed_args: argparse.Namespace, **kwargs: object) -> list[str]:
-    try:
-        compose_file = _find_compose_file(parsed_args.project)
-        proc = subprocess.run(
-            [COMPOSE, "-f", str(compose_file), "ps", "--format", "json"],
-            capture_output=True,
-            text=True,
-            cwd=parsed_args.project,
-        )
-        containers = json.loads(proc.stdout)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
-    return [name for c in containers if c.get("State") == "running" for name in c.get("Names", [])]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -186,7 +155,6 @@ def build_parser() -> argparse.ArgumentParser:
     build_parser.add_argument(
         "--podman-build-args",
         metavar="ARG",
-        nargs=1,
         action="append",
         default=[],
         help="Extra argument forwarded to podman-compose build (repeatable)",
@@ -196,8 +164,7 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="*",
         help="Services to build, if not provided, all services are built",
     )
-    if HAS_ARGCOMPLETE:
-        action.completer = _service_completer
+    action.completer = _service_completer
 
     run_parser = subparsers.add_parser(
         "run",
@@ -215,17 +182,15 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--podman-run-args",
         metavar="ARG",
-        nargs=1,
         action="append",
         default=[],
         help="Extra argument forwarded to podman-compose run (repeatable)",
     )
     action = run_parser.add_argument("service", help="Service to run")
-    if HAS_ARGCOMPLETE:
-        action.completer = _service_completer
+    action.completer = _service_completer
     run_parser.add_argument(
         "args",
-        nargs="*",
+        nargs=argparse.REMAINDER,
         help="Command to run inside the container",
     )
     list_parser = subparsers.add_parser(
@@ -236,24 +201,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     list_parser.set_defaults(func=cmd_list)
 
-    exec_parser = subparsers.add_parser(
-        "exec",
-        aliases=["e"],
-        formatter_class=fmt_class,
-        help="Run a command in a running container",
-    )
-    exec_parser.set_defaults(func=cmd_exec)
-    action = exec_parser.add_argument("container", help="Running container to exec into")
-    if HAS_ARGCOMPLETE:
-        action.completer = _container_completer
-    exec_parser.add_argument(
-        "args",
-        nargs="*",
-        help="Command to run inside the container",
-    )
-
-    if HAS_ARGCOMPLETE:
-        autocomplete(parser)
+    autocomplete(parser)
 
     return parser
 
@@ -262,7 +210,13 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = build_parser()
     args = parser.parse_args()
-    args.func(args)
+    try:
+        args.func(args)
+    except (FileExistsError, FileNotFoundError) as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        sys.exit(e.returncode)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,14 @@ uv tool install -e .
 uv tool install .
 ```
 
+### Shell completion
+
+Register the completer in your shell:
+
+```sh
+eval "$(register-python-argcomplete devct)"
+```
+
 ## Usage
 
 ```
@@ -56,7 +64,15 @@ Run a one-off command in a service container.
 devct run [--rm | --no-rm] [--podman-run-args ARG]... SERVICE [ARGS...]
 ```
 
-`--rm` is on by default.
+`--rm` is on by default. Everything after `SERVICE` is passed verbatim to the container, including flags.
+
+#### `list` (aliases: `l`, `ls`)
+
+List service containers.
+
+```sh
+devct list
+```
 
 ## Environment
 

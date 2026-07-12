@@ -15,9 +15,7 @@ wheels = [
 name = "devct"
 version = "0.1.0"
 source = { virtual = "." }
-
-[package.optional-dependencies]
-completion = [
+dependencies = [
     { name = "argcomplete" },
     { name = "pyyaml" },
 ]
@@ -29,10 +27,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "argcomplete", marker = "extra == 'completion'", specifier = ">=3.0" },
-    { name = "pyyaml", marker = "extra == 'completion'", specifier = ">=6.0" },
+    { name = "argcomplete", specifier = ">=3.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
 ]
-provides-extras = ["completion"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "ruff", specifier = ">=0.15.15" }]
